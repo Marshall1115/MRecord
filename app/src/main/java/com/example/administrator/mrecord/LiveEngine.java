@@ -41,12 +41,12 @@ public class LiveEngine {
         ap = new AudioPusher (audioParams);
 //        videoParams.height = 720;
 //        videoParams.width = 1280;
-        videoParams.height = 720;
-        videoParams.path = videoPath;
-        videoParams.width = 1280;
-//        videoParams.height = 480;
+//        videoParams.height = 720;
 //        videoParams.path = videoPath;
-//        videoParams.width = 800;
+//        videoParams.width = 1280;
+        videoParams.height = 480;
+        videoParams.path = videoPath;
+        videoParams.width = 800;
 //        videoParams.height = view.getHeight();
 //        videoParams.width = view.getWidth();
         videoParams.cameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;//前置摄像头

@@ -89,9 +89,9 @@ public class AudioPusher extends Pusher<AudioParams> {
 //                if (channelCount == 2) {
 //                    channelConfiguration = AudioFormat.CHANNEL_CONFIGURATION_STEREO;
 //                }
-                PCMBufferSize = AudioRecord.getMinBufferSize (frequency, channelConfiguration, audioEncoding);
+//                PCMBufferSize = AudioRecord.getMinBufferSize (frequency, channelConfiguration, audioEncoding);
                 Log.d ("AudioPusher", "PCMBufferSize:"+PCMBufferSize);
-
+                PCMBufferSize = 2048;
                 byte[] buffer = new byte[PCMBufferSize];
                 while (isPushing) {
                     int length = buffer.length;
@@ -101,7 +101,7 @@ public class AudioPusher extends Pusher<AudioParams> {
                     } catch (IOException e) {
                     }
                     //todo
-//                    AudioNativeUtils.pushData (buffer, bufferReadResult);
+                    AudioNativeUtils.pushData (buffer, bufferReadResult);
                 }
             }
         });

@@ -16,7 +16,8 @@ extern "C"
 #include "threadsafe_queue.cpp"
 
 using namespace libyuv;
-threadsafe_queue<uint8_t *> frame_queue;
+threadsafe_queue<uint8_t *> video_frame_queue;
+threadsafe_queue<uint8_t *> audio_frame_queue;
 
 void android_log(void *ptr, int level, const char *fmt, va_list vl) {
     switch (level) {
@@ -44,7 +45,7 @@ void android_log(void *ptr, int level, const char *fmt, va_list vl) {
     }
 }
 
-int startSendOneFrame(uint8_t *buf);
+int startSendOneVideoFrame(uint8_t *buf);
 
 struct UserArguments *arguments;
 extern "C"
@@ -52,7 +53,7 @@ JNIEXPORT void JNICALL
 Java_com_example_administrator_mrecord_utils_PicutureNativeUtils_pushData(JNIEnv *env, jclass type,
                                                                           jbyteArray data_) {
     jbyte *data = env->GetByteArrayElements(data_, NULL);
-    startSendOneFrame((uint8_t *) data);
+    startSendOneVideoFrame((uint8_t *) data);
     env->ReleaseByteArrayElements(data_, data, 0);
 }
 
@@ -74,37 +75,66 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
         return ret;
     }
     out_stream->codecpar->codec_tag = 0;
+//    if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+//        out_stream->codec->flags |= AVFMT_GLOBALHEADER  ;
     if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
-        out_stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+        out_stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+//    AVCodec * codec = avcodec_find_encoder( out_stream->codec->codec_id);
+//    AVCodecContext *pCodecCtx =  avcodec_alloc_context3(codec);
+//    if (!out_stream->codec->codec) {
+//        av_log(NULL, AV_LOG_ERROR, "Error allocating the encoding context.\n");
+//        return 0;
+//    }
+    // input_streams[source_index]->discard = 0;
+
     AVCodecContext *pCodecCtx = out_stream->codec;
 
     if (type == VIDEO_STREAM) {
-        ofmt_ctx->video_codec_id = AV_CODEC_ID_H264;
-        //pCodecCtx->codec_id =AV_CODEC_ID_HEVC;
+//        ofmt_ctx->video_codec_id = AV_CODEC_ID_H264;
+//        pCodecCtx->codec_id =AV_CODEC_ID_HEVC;
         pCodecCtx->codec_id = AV_CODEC_ID_H264;
         pCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
         pCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
         pCodecCtx->width = arguments->out_width;
         pCodecCtx->height = arguments->out_height;
+        av_log(NULL, AV_LOG_FATAL, "arguments->video_bit_rate %d\n", arguments->video_bit_rate);
+
         pCodecCtx->bit_rate = arguments->video_bit_rate;
-        pCodecCtx->gop_size = arguments->frame_rate*2;
         pCodecCtx->thread_count = 12;
         pCodecCtx->time_base.num = 1;
         pCodecCtx->time_base.den = arguments->frame_rate;
+        pCodecCtx->gop_size = arguments->frame_rate ;
         pCodecCtx->qmin = 10;
         pCodecCtx->qmax = 51;
 //        out_stream->time_base = AVRational{1, arguments->frame_rate};
         //Optional Param
-        pCodecCtx->max_b_frames = 3;
+        pCodecCtx->max_b_frames = 1;//0没有编码延迟
 
-        //H.264
-        if (pCodecCtx->codec_id == AV_CODEC_ID_H264) {
+
+//        pCodecCtx->me_range = 0;
+//        pCodecCtx->max_qdiff = 3;
+        pCodecCtx->gop_size = 12;
+        pCodecCtx->me_range = 16;
+        pCodecCtx->max_qdiff = 4;
+        pCodecCtx->qmin = 10;
+        pCodecCtx->qmax = 51;
+        pCodecCtx->qcompress = 0.6;
+
+//        pCodecCtx->qmin = 2;
+//        pCodecCtx->qmax = 31;
+//        pCodecCtx->qcompress = 0.50000000;
+
+        //H.264 打开注释视频起始位置编码有问题，前几个画面非常不清晰
+//        if (pCodecCtx->codec_id == AV_CODEC_ID_H264) {
 //        av_dict_set(&param, "tune", "animation", 0);
 //        av_dict_set(&param, "profile", "baseline", 0);
-            av_dict_set(&param, "tune", "animation", 0);
-            av_opt_set(pCodecCtx->priv_data, "preset", "slow", 0);
+////            av_dict_set(&param, "tune", "zerolatency", 0);
+////            av_opt_set(pCodecCtx->priv_data, "preset", "film", 0);
+            av_opt_set(pCodecCtx->priv_data, "preset", "ultrafast", 0);
             av_dict_set(&param, "profile", "baseline", 0);
-        }
+////            av_dict_set(&param, "profile", "main", 0);
+//        }
     } else if (type == AUDIO_STREAM) {
         ofmt_ctx->audio_codec_id = AV_CODEC_ID_AAC;
 
@@ -135,6 +165,36 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 }
 
 bool isEnd = 0;
+FILE *fpOut = fopen("/storage/emulated/0/out.pcm", "ab+");
+
+int flush_encoder(AVFormatContext *fmt_ctx,unsigned int stream_index){
+    int ret;
+    int got_frame;
+    AVPacket enc_pkt;
+    if (!(fmt_ctx->streams[stream_index]->codec->codec->capabilities &
+          CODEC_CAP_DELAY))
+        return 0;
+    while (1) {
+        enc_pkt.data = NULL;
+        enc_pkt.size = 0;
+        av_init_packet(&enc_pkt);
+        ret = avcodec_encode_video2 (fmt_ctx->streams[stream_index]->codec, &enc_pkt,
+                                     NULL, &got_frame);
+        av_frame_free(NULL);
+        if (ret < 0)
+            break;
+        if (!got_frame){
+            ret=0;
+            break;
+        }
+        av_log(NULL, AV_LOG_FATAL,"Flush Encoder: Succeed to encode 1 frame!\tsize:%5d\n",enc_pkt.size);
+        /* mux encoded frame */
+        ret = av_interleaved_write_frame(fmt_ctx, &enc_pkt);
+        if (ret < 0)
+            break;
+    }
+    return ret;
+}
 
 void *startVideoEncode(void *args) {
 
@@ -154,18 +214,20 @@ void *startVideoEncode(void *args) {
 
 
     int got_packet_ptr = 0;
-    avformat_write_header(ofmt_ctx, NULL);
     int frameCount = 0;
     while (!isEnd) {
         // 错误信息：Provided packet is too small, needs to be 1647 解决办法：重新初始化packet
         enc_pkt.data = NULL;
         enc_pkt.size = 0;
         av_init_packet(&enc_pkt);
-        uint8_t *ele = *frame_queue.wait_and_pop().get();//yv21
+        uint8_t *ele = *video_frame_queue.wait_and_pop().get();//yv21
+//        pFrame->pts = frameCount * (ofmt_ctx->streams[0]->time_base.den) /
+//                      ((ofmt_ctx->streams[0]->time_base.num) * arguments->frame_rate);
+        //第二种写法：av_rescale_q(1, out_codec_context->time_base, video_st->time_base);
         pFrame->pts = frameCount * (ofmt_ctx->streams[0]->time_base.den) /
-                      ((ofmt_ctx->streams[0]->time_base.num) * arguments->frame_rate);
+                      ((ofmt_ctx->streams[0]->time_base.num) * 25);
 //        pFrame->pts = frameCount;
-        av_log(NULL, AV_LOG_FATAL, "pts %lld \n",  pFrame->pts );
+        av_log(NULL, AV_LOG_FATAL, "pts %lld \n", pFrame->pts);
 
         int src_width = arguments->in_height;
         int src_height = arguments->in_width;
@@ -215,30 +277,135 @@ void *startVideoEncode(void *args) {
                                V_data_Dst, Dst_Stride_V,
                                src_width, src_height,
                                (libyuv::RotationMode) rotate);
+        pFrame->height = arguments->out_height;
+        pFrame->width = arguments->out_width;
+        pFrame->format = AV_PIX_FMT_YUV420P;
+//        pFrame->key_frame =1;
+        AVCodecContext *codec = ofmt_ctx->streams[0]->codec;
         int ret = avcodec_encode_video2(ofmt_ctx->streams[0]->codec, &enc_pkt, pFrame,
                                         &got_packet_ptr);
+
+        av_log(NULL, AV_LOG_FATAL, " pFrame->key_frame %d ! \n", pFrame->pict_type);
+
+//        enc_pkt.duration=(ofmt_ctx->streams[0]->time_base.den) /
+//                         ((ofmt_ctx->streams[0]->time_base.num) * arguments->frame_rate);
         if (ret < 0) {
             av_log(NULL, AV_LOG_FATAL, "Failed to encode! ret:%d\n", ret);
             continue;
         }
         if (got_packet_ptr >= 0) {
+
+
+//            enc_pkt.pts = av_rescale_q_rnd(enc_pkt.pts, ofmt_ctx->streams[0]->time_base,
+//                                           ofmt_ctx->streams[0]->time_base,(AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
+//            enc_pkt.dts = av_rescale_q_rnd(enc_pkt.dts,  ofmt_ctx->streams[0]->time_base,
+//                                           ofmt_ctx->streams[0]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
+//
+//            enc_pkt.duration = ((ofmt_ctx->streams[0]->time_base.den / ofmt_ctx->streams[0]->time_base.num) / 15);
+
+            av_log(NULL, AV_LOG_FATAL, "Avpacket pts %lld \n", enc_pkt.pts);
             enc_pkt.stream_index = ofmt_ctx->streams[0]->index;
-            av_log(NULL, AV_LOG_FATAL, "encode succetss  ! \n");
+            av_log(NULL, AV_LOG_FATAL, " video encode succetss  ! \n");
 //            pkt.pts=pkt.dts=frameCount;
             frameCount++;
-            av_log(NULL, AV_LOG_FATAL, "frameCount %d \n",frameCount);
+            av_log(NULL, AV_LOG_FATAL, "frameCount %d \n", frameCount);
 
-        } else{
-            av_log(NULL, AV_LOG_FATAL, "encode failed  ! \n");
+        } else {
+            av_log(NULL, AV_LOG_FATAL, " video encode failed  ! \n");
+            continue;
         }
-        ret = av_write_frame(ofmt_ctx, &enc_pkt);
-        if (frameCount > 150) {
+        if(ofmt_ctx->streams[0]->codec->coded_frame->key_frame)
+            enc_pkt.flags |= AV_PKT_FLAG_KEY;
+        ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
+        av_free_packet(&enc_pkt);
+
+        if (frameCount > 100) {
+            isEnd = 1;
             break;
         }
     }
+
+    //Flush Encoder
+    int ret = flush_encoder(ofmt_ctx,0);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_FATAL, "Flushing encoder failed\n");
+        return (void *) -1;
+    }
+
     //Write file trailer
     av_write_trailer(ofmt_ctx);
     av_log(NULL, AV_LOG_FATAL, " 编码完毕 \n");
+    avcodec_close(ofmt_ctx->streams[0]->codec);
+    av_free(pFrame->data);
+    av_free(pFrame);
+    /* free the streams */
+    for (int i = 0; i < ofmt_ctx->nb_streams; i++) {
+        av_freep(&ofmt_ctx->streams[i]->codec);
+        av_freep(&ofmt_ctx->streams[i]);
+    }
+
+    avio_close(ofmt_ctx->pb);
+    /* free the stream */
+    av_free(ofmt_ctx);
+    return 0;
+}
+
+void *startAudioEncode(void *args) {
+    int frameCount = 0;
+    struct UserArguments *arguments = (struct UserArguments *) args;
+    AVFormatContext *ofmt_ctx = arguments->pFmt_ctx;
+    AVFrame *pFrame = av_frame_alloc();
+    AVCodecContext *codecContext = ofmt_ctx->streams[1]->codec;
+    int size = av_samples_get_buffer_size(NULL, codecContext->channels, codecContext->frame_size,
+                                          codecContext->sample_fmt, 1);
+    av_log(NULL, AV_LOG_FATAL, "av_samples_get_buffer_size:%d\n", size);
+    av_log(NULL, AV_LOG_FATAL, ", codecContext->frame_size:%d\n", codecContext->frame_size);
+
+    uint8_t *frame_buf = (uint8_t *) av_malloc(size);
+    avcodec_fill_audio_frame(pFrame, codecContext->channels, codecContext->sample_fmt,
+                             (const uint8_t *) frame_buf, size, 1);
+    AVPacket enc_pkt;
+    av_new_packet(&enc_pkt, size);
+    int got_packet_ptr = 0;
+
+
+    while (!isEnd) {
+
+        enc_pkt.data = NULL;
+        enc_pkt.size = 0;
+        av_init_packet(&enc_pkt);
+        uint8_t *ele = *audio_frame_queue.wait_and_pop().get();//yv21
+
+        pFrame->data[0] = ele;  //PCM Data
+        pFrame->pts = (frameCount++)*codecContext->frame_size;
+        pFrame->nb_samples= codecContext->frame_size;
+        pFrame->format= codecContext->sample_fmt;
+//        if(frameCount>30){
+//            fwrite(ele, 1, 2048, fpOut);
+//        }else{
+//            if(fpOut!=NULL){
+//                fclose(fpOut);
+//            }
+//        }
+
+        int ret = avcodec_encode_audio2(codecContext, &enc_pkt, pFrame, &got_packet_ptr);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_FATAL, "Failed to encode! ret:%d\n", ret);
+            continue;
+        }
+        if (got_packet_ptr >= 0) {
+            enc_pkt.stream_index = ofmt_ctx->streams[1]->index;
+            av_log(NULL, AV_LOG_FATAL, " audio encode succetss  ! \n");
+            ret = av_write_frame(ofmt_ctx, &enc_pkt);
+            av_free_packet(&enc_pkt);
+        } else {
+            av_log(NULL, AV_LOG_FATAL, " audio encode failed  ! \n");
+            continue;
+        }
+        if(frameCount>100){
+            break;
+        }
+    }
     return 0;
 }
 
@@ -251,15 +418,15 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     arguments = (struct UserArguments *) malloc(sizeof(UserArguments));
     int video_bit_rate = 400000;
     int frame_rate = 25;
-    int in_width = 720;
-    int in_height = 1280;
-//    int in_width = 480;
-//    int in_height = 800;
+//    int in_width = 720;
+//    int in_height = 1280;
+    int in_width = 480;
+    int in_height = 800;
     int out_height = in_height;
     int out_width = in_width;
     arguments->video_bit_rate = video_bit_rate;
     arguments->frame_rate = frame_rate;
-    arguments->audio_bit_rate = 40000;
+    arguments->audio_bit_rate = 64000;
     arguments->audio_sample_rate = 44100;
     arguments->in_width = in_width;
     arguments->in_height = in_height;
@@ -291,6 +458,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     out_filename = videoPath;//输出文件名（Output file URL）
     av_log(NULL, AV_LOG_FATAL, "out_filename: %s", out_filename);
     av_register_all();
+
     //输出（Output）
     avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename);
     if (!ofmt_ctx) {
@@ -298,7 +466,9 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
         ret = AVERROR_UNKNOWN;
 //        goto end;
     }
-    ofmt = ofmt_ctx->oformat;
+    //Guess Format
+    ofmt = av_guess_format(NULL, out_filename, NULL);
+    ofmt_ctx->oformat = ofmt;
     //Open output URL
     if (avio_open(&ofmt_ctx->pb, videoPath, AVIO_FLAG_READ_WRITE) < 0) {
         av_log(NULL, AV_LOG_FATAL, "Failed to open output file! \n");
@@ -307,7 +477,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
 
     create_avstream(arguments, ofmt_ctx, VIDEO_STREAM);
     create_avstream(arguments, ofmt_ctx, AUDIO_STREAM);
-
+    avformat_write_header(ofmt_ctx, NULL);
 
     arguments->pFmt_ctx = ofmt_ctx;
 
@@ -315,6 +485,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
 
     pthread_t thread;
     pthread_create(&thread, NULL, startVideoEncode, arguments);
+    pthread_create(&thread, NULL, startAudioEncode, arguments);
 
     //打开输出文件（Open output file）
 //    if (!(ofmt->flags & AVFMT_NOFILE)) {
@@ -368,11 +539,37 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
  * @param buf
  * @return
  */
-int startSendOneFrame(uint8_t *buf) {
+int startSendOneVideoFrame(uint8_t *buf) {
     int in_y_size = arguments->in_width * arguments->in_height;
 
     uint8_t *new_buf = (uint8_t *) malloc(in_y_size * 3 / 2);
     memcpy(new_buf, buf, in_y_size * 3 / 2);
-    frame_queue.push(new_buf);
+    video_frame_queue.push(new_buf);
     return 0;
+}
+/**
+ * 发送一帧到编码队列
+ * @param buf
+ * @return
+ */
+int startSendOneAudioFrame(uint8_t *buf) {
+    uint8_t *new_buf = (uint8_t *) malloc(2048);
+    memcpy(new_buf, buf, 2048);
+    audio_frame_queue.push(new_buf);
+    return 0;
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_example_administrator_mrecord_AudioNativeUtils_pushData(JNIEnv *env, jclass type,
+                                                                 jbyteArray buffer_, jint length) {
+    jbyte *buffer = env->GetByteArrayElements(buffer_, NULL);
+    startSendOneAudioFrame((uint8_t*)buffer);
+    env->ReleaseByteArrayElements(buffer_, buffer, 0);
+}extern "C"
+JNIEXPORT void JNICALL
+Java_com_example_administrator_mrecord_AudioNativeUtils_release(JNIEnv *env, jclass type) {
+
+    // TODO
+
 }

@@ -50,10 +50,12 @@ add_library(avfilter_lib SHARED IMPORTED)
 set_target_properties(avfilter_lib PROPERTIES IMPORTED_LOCATION
                      ${lib_src_DIR}/libavfilter.so)
 
+#add_library(fdk-aac_lib STATIC IMPORTED)
+#set_target_properties(fdk-aac_lib PROPERTIES IMPORTED_LOCATION
+#                     ${lib_src_DIR}/libfdk-aac.a)
 add_library(fdk-aac_lib STATIC IMPORTED)
 set_target_properties(fdk-aac_lib PROPERTIES IMPORTED_LOCATION
                      ${lib_src_DIR}/libfdk-aac.a)
-
 ## add_library(x264_lib STATIC IMPORTED)
 ## set_target_properties(x264_lib PROPERTIES IMPORTED_LOCATION
 ##                      ${lib_src_DIR}/libx264.a)
