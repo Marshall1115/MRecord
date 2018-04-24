@@ -114,11 +114,12 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 
 //        pCodecCtx->me_range = 0;
 //        pCodecCtx->max_qdiff = 3;
+        //todo 学习如下参数
         pCodecCtx->gop_size = 12;
         pCodecCtx->me_range = 16;
         pCodecCtx->max_qdiff = 4;
         pCodecCtx->qmin = 10;
-        pCodecCtx->qmax = 51;
+        pCodecCtx->qmax = 20;
         pCodecCtx->qcompress = 0.6;
 
 //        pCodecCtx->qmin = 2;
@@ -302,7 +303,6 @@ void *startVideoEncode(void *args) {
 //                                           ofmt_ctx->streams[0]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
 //
 //            enc_pkt.duration = ((ofmt_ctx->streams[0]->time_base.den / ofmt_ctx->streams[0]->time_base.num) / 15);
-
             av_log(NULL, AV_LOG_FATAL, "Avpacket pts %lld \n", enc_pkt.pts);
             enc_pkt.stream_index = ofmt_ctx->streams[0]->index;
             av_log(NULL, AV_LOG_FATAL, " video encode succetss  ! \n");
@@ -458,7 +458,6 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     out_filename = videoPath;//输出文件名（Output file URL）
     av_log(NULL, AV_LOG_FATAL, "out_filename: %s", out_filename);
     av_register_all();
-
     //输出（Output）
     avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename);
     if (!ofmt_ctx) {
@@ -467,6 +466,8 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
 //        goto end;
     }
     //Guess Format
+//        ofmt_ctx->duration = 2000000;
+
     ofmt = av_guess_format(NULL, out_filename, NULL);
     ofmt_ctx->oformat = ofmt;
     //Open output URL
