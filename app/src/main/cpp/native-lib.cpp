@@ -115,12 +115,22 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        pCodecCtx->me_range = 0;
 //        pCodecCtx->max_qdiff = 3;
         //todo 学习如下参数
-        pCodecCtx->gop_size = 12;
-        pCodecCtx->me_range = 16;
+//        pCodecCtx->gop_size = 12;
+//        pCodecCtx->me_range = 16;
+//        pCodecCtx->max_qdiff = 4;
+//        pCodecCtx->qmin = 10;
+//        pCodecCtx->qmax = 20;
+//        pCodecCtx->qcompress = 0.6;
+
+        pCodecCtx->gop_size = 30;
+        pCodecCtx->max_b_frames = 3;
+        /* Set relevant parameters of H264 */
+        pCodecCtx->qmin = 10;   //default 2
+        pCodecCtx->qmax = 31;   //default 31
         pCodecCtx->max_qdiff = 4;
-        pCodecCtx->qmin = 10;
-        pCodecCtx->qmax = 20;
-        pCodecCtx->qcompress = 0.6;
+        pCodecCtx->me_range = 16;   //default 0
+        pCodecCtx->max_qdiff = 4;   //default 3
+        pCodecCtx->qcompress = 0.6; //default 0.5
 
 //        pCodecCtx->qmin = 2;
 //        pCodecCtx->qmax = 31;
@@ -132,8 +142,9 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        av_dict_set(&param, "profile", "baseline", 0);
 ////            av_dict_set(&param, "tune", "zerolatency", 0);
 ////            av_opt_set(pCodecCtx->priv_data, "preset", "film", 0);
-            av_opt_set(pCodecCtx->priv_data, "preset", "ultrafast", 0);
-            av_dict_set(&param, "profile", "baseline", 0);
+            av_opt_set(pCodecCtx->priv_data, "preset", "superfast", 0);
+            av_dict_set(&param, "profile", "high", 0);
+        av_dict_set(&param, "crf", "26", 0);
 ////            av_dict_set(&param, "profile", "main", 0);
 //        }
     } else if (type == AUDIO_STREAM) {
