@@ -123,7 +123,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        pCodecCtx->qcompress = 0.6;
 
         pCodecCtx->gop_size = 30;
-        pCodecCtx->max_b_frames = 3;
+        pCodecCtx->max_b_frames = 0;
         /* Set relevant parameters of H264 */
         pCodecCtx->qmin = 10;   //default 2
         pCodecCtx->qmax = 31;   //default 31
@@ -143,7 +143,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 ////            av_dict_set(&param, "tune", "zerolatency", 0);
 ////            av_opt_set(pCodecCtx->priv_data, "preset", "film", 0);
             av_opt_set(pCodecCtx->priv_data, "preset", "superfast", 0);
-            av_dict_set(&param, "profile", "high", 0);
+            av_dict_set(&param, "profile", "baseline", 0);
         av_dict_set(&param, "crf", "26", 0);
 ////            av_dict_set(&param, "profile", "main", 0);
 //        }
@@ -171,7 +171,6 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
         return -1;
     }
     av_log(NULL, AV_LOG_FATAL, "编码器打开成功 type：%d", type);
-    av_dump_format(ofmt_ctx, 0, ofmt_ctx->filename, 1);
 
     return 0;
 }
@@ -472,10 +471,17 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     const char *out_filename;
     int ret, i;
     out_filename = videoPath;//输出文件名（Output file URL）
+
     av_log(NULL, AV_LOG_FATAL, "out_filename: %s", out_filename);
     av_register_all();
     //输出（Output）
-    avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename);
+//    avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename);
+    //rtmp
+    //Network
+    avformat_network_init();
+    char *rtmp_url = "rtmp://192.168.67.32:1935/live/marshall";
+    out_filename = "rtmp://192.168.67.32:1935/live/marshall";
+    avformat_alloc_output_context2(&ofmt_ctx, NULL,"flv", out_filename);
     if (!ofmt_ctx) {
         av_log(NULL, AV_LOG_FATAL, "Could not create output context\n");
         ret = AVERROR_UNKNOWN;
@@ -484,16 +490,25 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     //Guess Format
 //        ofmt_ctx->duration = 2000000;
 
-    ofmt = av_guess_format(NULL, out_filename, NULL);
-    ofmt_ctx->oformat = ofmt;
+//    ofmt = av_guess_format(NULL, out_filename, NULL);
+//    ofmt_ctx->oformat = ofmt;
     //Open output URL
-    if (avio_open(&ofmt_ctx->pb, videoPath, AVIO_FLAG_READ_WRITE) < 0) {
-        av_log(NULL, AV_LOG_FATAL, "Failed to open output file! \n");
-        return;
-    }
+//    if (avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_READ_WRITE) < 0) {
+//        av_log(NULL, AV_LOG_FATAL, "Failed to open output file! \n");
+//        return;
+//    }
 
     create_avstream(arguments, ofmt_ctx, VIDEO_STREAM);
     create_avstream(arguments, ofmt_ctx, AUDIO_STREAM);
+    av_dump_format(ofmt_ctx, 0, out_filename, 1);
+    if (!(ofmt_ctx->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            av_log( NULL,AV_LOG_FATAL,"Could not open output URL '%s'", out_filename);
+            return;
+        }
+    }
+
     avformat_write_header(ofmt_ctx, NULL);
 
     arguments->pFmt_ctx = ofmt_ctx;
