@@ -236,8 +236,7 @@ void *startVideoEncode(void *args) {
 //        pFrame->pts = frameCount * (ofmt_ctx->streams[0]->time_base.den) /
 //                      ((ofmt_ctx->streams[0]->time_base.num) * arguments->frame_rate);
         //第二种写法：av_rescale_q(1, out_codec_context->time_base, video_st->time_base);
-        pFrame->pts = frameCount * (ofmt_ctx->streams[0]->time_base.den) /
-                      ((ofmt_ctx->streams[0]->time_base.num) * 25);
+
 //        pFrame->pts = frameCount;
         av_log(NULL, AV_LOG_FATAL, "pts %lld \n", pFrame->pts);
 
@@ -294,6 +293,10 @@ void *startVideoEncode(void *args) {
         pFrame->format = AV_PIX_FMT_YUV420P;
 //        pFrame->key_frame =1;
         AVCodecContext *codec = ofmt_ctx->streams[0]->codec;
+        //frameCount*12800/25
+        //pFrame 第25帧时， pts = 12800
+          pFrame->pts = frameCount * (ofmt_ctx->streams[0]->time_base.den) /
+                              ((ofmt_ctx->streams[0]->time_base.num) * 25);
         int ret = avcodec_encode_video2(ofmt_ctx->streams[0]->codec, &enc_pkt, pFrame,
                                         &got_packet_ptr);
 
@@ -325,8 +328,8 @@ void *startVideoEncode(void *args) {
             av_log(NULL, AV_LOG_FATAL, " video encode failed  ! \n");
             continue;
         }
-        if(ofmt_ctx->streams[0]->codec->coded_frame->key_frame)
-            enc_pkt.flags |= AV_PKT_FLAG_KEY;
+//        if(ofmt_ctx->streams[0]->codec->coded_frame->key_frame)
+//            enc_pkt.flags |= AV_PKT_FLAG_KEY;
         ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
         av_free_packet(&enc_pkt);
 
@@ -388,6 +391,7 @@ void *startAudioEncode(void *args) {
         uint8_t *ele = *audio_frame_queue.wait_and_pop().get();//yv21
 
         pFrame->data[0] = ele;  //PCM Data
+        //codecontext timebase 44100
         pFrame->pts = (frameCount++)*codecContext->frame_size;
         pFrame->nb_samples= codecContext->frame_size;
         pFrame->format= codecContext->sample_fmt;
@@ -447,6 +451,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
 
     av_register_all();
     av_log_set_callback(android_log);
+    av_log_set_level(AV_LOG_DEBUG);
     AVCodec *codec = avcodec_find_encoder_by_name("libfdk_aac");
     if (codec == NULL) {
         __android_log_print(ANDROID_LOG_DEBUG, "native-lib", ": %s", "打开libfdk_aac 失败");
