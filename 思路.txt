@@ -3,3 +3,6 @@
 在开始录制时初始化基本功能库
 初始化完功能库之后，开始录制功能，写入mp4
 
+完成fmfpeg rtmp发送流数据，当前库缺少rmmp协议，avioopen 后失败，重新编译ffmepg 后重试
+ 在ffmepg中关闭  --disable-protocols选项，这样ffmepg才能推流rtmp，要不然rtmp协议被禁用，在avioopen就会失败
+

@@ -49,7 +49,7 @@ public class LiveEngine {
         videoParams.width = 800;
 //        videoParams.height = view.getHeight();
 //        videoParams.width = view.getWidth();
-        videoParams.cameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;//前置摄像头
+        videoParams.cameraId = Camera.CameraInfo.CAMERA_FACING_BACK;//前置摄像头
         vp = new VideoPusher (videoParams);
         vp.setPreviewDisplay (view.getHolder ());
 

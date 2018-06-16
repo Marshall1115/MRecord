@@ -9,6 +9,8 @@ extern "C"
 #include "UserArguments.h"
 #include <libavutil/opt.h>
 #include <android/log.h>
+#include <libavutil/time.h>
+
 #include <libyuv.h>
 #include "libyuv/rotate.h"
 };
@@ -109,7 +111,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
         pCodecCtx->qmax = 51;
 //        out_stream->time_base = AVRational{1, arguments->frame_rate};
         //Optional Param
-        pCodecCtx->max_b_frames = 1;//0没有编码延迟
+        pCodecCtx->max_b_frames = 0;//0没有编码延迟
 
 
 //        pCodecCtx->me_range = 0;
@@ -122,15 +124,15 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        pCodecCtx->qmax = 20;
 //        pCodecCtx->qcompress = 0.6;
 
-        pCodecCtx->gop_size = 30;
+        pCodecCtx->gop_size = 1;
         pCodecCtx->max_b_frames = 0;
         /* Set relevant parameters of H264 */
-        pCodecCtx->qmin = 10;   //default 2
-        pCodecCtx->qmax = 31;   //default 31
-        pCodecCtx->max_qdiff = 4;
-        pCodecCtx->me_range = 16;   //default 0
-        pCodecCtx->max_qdiff = 4;   //default 3
-        pCodecCtx->qcompress = 0.6; //default 0.5
+//        pCodecCtx->qmin = 10;   //default 2
+//        pCodecCtx->qmax = 31;   //default 31
+//        pCodecCtx->max_qdiff = 4;
+//        pCodecCtx->me_range = 16;   //default 0
+//        pCodecCtx->max_qdiff = 4;   //default 3
+//        pCodecCtx->qcompress = 0.6; //default 0.5
 
 //        pCodecCtx->qmin = 2;
 //        pCodecCtx->qmax = 31;
@@ -142,7 +144,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        av_dict_set(&param, "profile", "baseline", 0);
 ////            av_dict_set(&param, "tune", "zerolatency", 0);
 ////            av_opt_set(pCodecCtx->priv_data, "preset", "film", 0);
-            av_opt_set(pCodecCtx->priv_data, "preset", "superfast", 0);
+            av_opt_set(pCodecCtx->priv_data, "preset", "zerolatency", 0);
             av_dict_set(&param, "profile", "baseline", 0);
         av_dict_set(&param, "crf", "26", 0);
 ////            av_dict_set(&param, "profile", "main", 0);
@@ -226,6 +228,7 @@ void *startVideoEncode(void *args) {
 
     int got_packet_ptr = 0;
     int frameCount = 0;
+    int64_t start_time =av_gettime();
     while (!isEnd) {
         // 错误信息：Provided packet is too small, needs to be 1647 解决办法：重新初始化packet
         enc_pkt.data = NULL;
@@ -236,66 +239,38 @@ void *startVideoEncode(void *args) {
 //                      ((ofmt_ctx->streams[0]->time_base.num) * arguments->frame_rate);
         //第二种写法：av_rescale_q(1, out_codec_context->time_base, video_st->time_base);
 
-//        pFrame->pts = frameCount;
+
+
+        pFrame->pts = frameCount;
         av_log(NULL, AV_LOG_FATAL, "pts %lld \n", pFrame->pts);
 
         int src_width = arguments->in_height;
         int src_height = arguments->in_width;
-        // NV12 video size
-        int NV12_Size = src_width * src_height * 3 / 2;
-        int NV12_Y_Size = src_width * src_height;
-
-        // YUV420 video size
-        int I420_Size = src_width * src_height * 3 / 2;
-        int I420_Y_Size = src_width * src_height;
-        //加1的目的： 取整   以免画面出现绿边  去跨度一种简单方法
-        int I420_U_Size = ((src_width + 1) >> 1) * ((src_height + 1) >> 1);
-        int I420_V_Size = I420_U_Size;
 
 
 //    (unsigned char *) Dst_data = (unsigned char *) malloc(
 //            (I420_Size) * sizeof(unsigned char));  //I420
 
-        unsigned char *Y_data_Src = (unsigned char *) ele;
-        unsigned char *UV_data_Src = Y_data_Src + NV12_Y_Size;
-        int src_stride_y = src_width;
-        int src_stride_uv = src_width;
-
         //dst: buffer address of Y channel U channel and V channel
-        unsigned char *Y_data_Dst = pFrame->data[0];
-        unsigned char *U_data_Dst = pFrame->data[2];
-        unsigned char *V_data_Dst = pFrame->data[1];
-        int Dst_Stride_Y;
-        int Dst_Stride_U;
-        int Dst_Stride_V;
+//        unsigned char *Y_data_Dst = pFrame->data[0];
+//        unsigned char *U_data_Dst = pFrame->data[2];
+//        unsigned char *V_data_3Dst = pFrame->data[1];
 
-        int rotate = 270;
-        if (rotate == 90 || rotate == 270) {
-            Dst_Stride_Y = src_height;//480
-            Dst_Stride_U = src_height >> 1;
-            Dst_Stride_V = Dst_Stride_U;
-        } else {
-            Dst_Stride_Y = src_width;
-            Dst_Stride_U = src_width >> 1;
-            Dst_Stride_V = Dst_Stride_U;
-        }
+//        memcpy(V_data_Dst, ele+out_y_size, out_y_size/4);
+//        memcpy(U_data_Dst , ele+out_y_size+out_y_size/4, out_y_size/4);
 
-        NV12ToI420RotateMirror(Y_data_Src, src_stride_y,
-                               UV_data_Src, src_stride_uv,
-                               Y_data_Dst, Dst_Stride_Y,
-                               U_data_Dst, Dst_Stride_U,
-                               V_data_Dst, Dst_Stride_V,
-                               src_width, src_height,
-                               (libyuv::RotationMode) rotate);
-        pFrame->height = arguments->out_height;
+        pFrame->data[0] =ele;
+        pFrame->data[1] = ele+out_y_size*5/4 ;
+        pFrame->data[2] =ele+out_y_size;
+
         pFrame->width = arguments->out_width;
+        pFrame->height = arguments->out_height;
         pFrame->format = AV_PIX_FMT_YUV420P;
 //        pFrame->key_frame =1;
         AVCodecContext *codec = ofmt_ctx->streams[0]->codec;
         //frameCount*12800/25
         //pFrame 第25帧时， pts = 12800
-          pFrame->pts = frameCount * (ofmt_ctx->streams[0]->time_base.den) /
-                              ((ofmt_ctx->streams[0]->time_base.num) * 25);
+          pFrame->pts = av_rescale_q(frameCount,ofmt_ctx->streams[0]->codec->time_base,ofmt_ctx->streams[0]->time_base) ;
         int ret = avcodec_encode_video2(ofmt_ctx->streams[0]->codec, &enc_pkt, pFrame,
                                         &got_packet_ptr);
 
@@ -319,7 +294,7 @@ void *startVideoEncode(void *args) {
             av_log(NULL, AV_LOG_FATAL, "Avpacket pts %lld \n", enc_pkt.pts);
             enc_pkt.stream_index = ofmt_ctx->streams[0]->index;
             av_log(NULL, AV_LOG_FATAL, " video encode succetss  ! \n");
-//            pkt.pts=pkt.dts=frameCount;
+//            enc_pkt.pts=enc_pkt.dts=frameCount;
             frameCount++;
             av_log(NULL, AV_LOG_FATAL, "frameCount %d \n", frameCount);
 
@@ -329,13 +304,34 @@ void *startVideoEncode(void *args) {
         }
 //        if(ofmt_ctx->streams[0]->codec->coded_frame->key_frame)
 //            enc_pkt.flags |= AV_PKT_FLAG_KEY;
+        //FIX：No PTS (Example: Raw H.264)
+//Simple Write PTS
+        if(enc_pkt.pts==AV_NOPTS_VALUE){
+            //Write PTS
+            AVRational time_base1=ofmt_ctx->streams[0]->time_base;
+            //Duration between 2 frames (us)
+            int64_t calc_duration=(double)AV_TIME_BASE/av_q2d(ofmt_ctx->streams[0]->r_frame_rate);
+            //Parameters
+            enc_pkt.pts=(double)(frameCount*calc_duration)/(double)(av_q2d(time_base1)*AV_TIME_BASE);
+            enc_pkt.dts=enc_pkt.pts;
+            enc_pkt.duration=(double)calc_duration/(double)(av_q2d(time_base1)*AV_TIME_BASE);
+        }
         ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
         av_free_packet(&enc_pkt);
 
-        if (frameCount > 100) {
-            isEnd = 1;
-            break;
+        if(enc_pkt.stream_index==0){
+            AVRational time_base=ofmt_ctx->streams[0]->time_base;
+            AVRational time_base_q={1,AV_TIME_BASE};
+            int64_t pts_time = av_rescale_q(enc_pkt.dts, time_base, time_base_q);
+            int64_t now_time = av_gettime() - start_time;
+            if (pts_time > now_time)
+                av_usleep(pts_time - now_time);
         }
+//        if (frameCount > 100) {
+//
+//            isEnd = 1;
+//            break;
+//        }
     }
 
     //Flush Encoder
@@ -391,7 +387,8 @@ void *startAudioEncode(void *args) {
 
         pFrame->data[0] = ele;  //PCM Data
         //codecontext timebase 44100
-        pFrame->pts = (frameCount++)*codecContext->frame_size;
+        pFrame->pts = (frameCount++);
+//        pFrame->pts = (frameCount++)*codecContext->frame_size;
         pFrame->nb_samples= codecContext->frame_size;
         pFrame->format= codecContext->sample_fmt;
 //        if(frameCount>30){
@@ -416,9 +413,9 @@ void *startAudioEncode(void *args) {
             av_log(NULL, AV_LOG_FATAL, " audio encode failed  ! \n");
             continue;
         }
-        if(frameCount>100){
-            break;
-        }
+//        if(frameCount>100){
+//            break;
+//        }
     }
     return 0;
 }
@@ -434,8 +431,8 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     int frame_rate = 25;
 //    int in_width = 720;
 //    int in_height = 1280;
-    int in_width = 480;
-    int in_height = 800;
+    int in_width = 800;//后置摄像头宽高要相反
+    int in_height =480 ;
     int out_height = in_height;
     int out_width = in_width;
     arguments->video_bit_rate = video_bit_rate;
@@ -517,7 +514,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
 
     pthread_t thread;
     pthread_create(&thread, NULL, startVideoEncode, arguments);
-    pthread_create(&thread, NULL, startAudioEncode, arguments);
+//    pthread_create(&thread, NULL, startAudioEncode, arguments);
 
     //打开输出文件（Open output file）
 //    if (!(ofmt->flags & AVFMT_NOFILE)) {
