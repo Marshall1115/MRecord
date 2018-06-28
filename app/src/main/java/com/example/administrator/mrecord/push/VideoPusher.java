@@ -63,7 +63,7 @@ public class VideoPusher extends Pusher<VideoParams> {
         mCamera.setPreviewDisplay (holder);
         Camera.Parameters parameters = mCamera.getParameters ();
         parameters.setPreviewSize (parmas.width,parmas.height);
-        parameters.setPreviewFormat (ImageFormat.NV21);
+        parameters.setPreviewFormat (ImageFormat.YV12);
         mCamera.setParameters (parameters);
 //        mCamera.setDisplayOrientation (90);
         mCamera.addCallbackBuffer (new byte[parmas.height * parmas.width * 3/2]);

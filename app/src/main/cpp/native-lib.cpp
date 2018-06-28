@@ -106,7 +106,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
         pCodecCtx->thread_count = 12;
         pCodecCtx->time_base.num = 1;
         pCodecCtx->time_base.den = arguments->frame_rate;
-        pCodecCtx->gop_size = arguments->frame_rate ;
+        pCodecCtx->gop_size = arguments->frame_rate;
         pCodecCtx->qmin = 10;
         pCodecCtx->qmax = 51;
 //        out_stream->time_base = AVRational{1, arguments->frame_rate};
@@ -124,7 +124,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        pCodecCtx->qmax = 20;
 //        pCodecCtx->qcompress = 0.6;
 
-        pCodecCtx->gop_size = 1;
+        pCodecCtx->gop_size = 25;
         pCodecCtx->max_b_frames = 0;
         /* Set relevant parameters of H264 */
 //        pCodecCtx->qmin = 10;   //default 2
@@ -144,8 +144,8 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 //        av_dict_set(&param, "profile", "baseline", 0);
 ////            av_dict_set(&param, "tune", "zerolatency", 0);
 ////            av_opt_set(pCodecCtx->priv_data, "preset", "film", 0);
-            av_opt_set(pCodecCtx->priv_data, "preset", "zerolatency", 0);
-            av_dict_set(&param, "profile", "baseline", 0);
+        av_opt_set(pCodecCtx->priv_data, "preset", "zerolatency", 0);
+        av_dict_set(&param, "profile", "baseline", 0);
         av_dict_set(&param, "crf", "26", 0);
 ////            av_dict_set(&param, "profile", "main", 0);
 //        }
@@ -180,7 +180,7 @@ int create_avstream(struct UserArguments *arguments, AVFormatContext *ofmt_ctx, 
 bool isEnd = 0;
 FILE *fpOut = fopen("/storage/emulated/0/out.pcm", "ab+");
 
-int flush_encoder(AVFormatContext *fmt_ctx,unsigned int stream_index){
+int flush_encoder(AVFormatContext *fmt_ctx, unsigned int stream_index) {
     int ret;
     int got_frame;
     AVPacket enc_pkt;
@@ -191,16 +191,17 @@ int flush_encoder(AVFormatContext *fmt_ctx,unsigned int stream_index){
         enc_pkt.data = NULL;
         enc_pkt.size = 0;
         av_init_packet(&enc_pkt);
-        ret = avcodec_encode_video2 (fmt_ctx->streams[stream_index]->codec, &enc_pkt,
-                                     NULL, &got_frame);
+        ret = avcodec_encode_video2(fmt_ctx->streams[stream_index]->codec, &enc_pkt,
+                                    NULL, &got_frame);
         av_frame_free(NULL);
         if (ret < 0)
             break;
-        if (!got_frame){
-            ret=0;
+        if (!got_frame) {
+            ret = 0;
             break;
         }
-        av_log(NULL, AV_LOG_FATAL,"Flush Encoder: Succeed to encode 1 frame!\tsize:%5d\n",enc_pkt.size);
+        av_log(NULL, AV_LOG_FATAL, "Flush Encoder: Succeed to encode 1 frame!\tsize:%5d\n",
+               enc_pkt.size);
         /* mux encoded frame */
         ret = av_interleaved_write_frame(fmt_ctx, &enc_pkt);
         if (ret < 0)
@@ -208,6 +209,8 @@ int flush_encoder(AVFormatContext *fmt_ctx,unsigned int stream_index){
     }
     return ret;
 }
+
+FILE *out = fopen("/storage/emulated/0/test.yuv", "wb");
 
 void *startVideoEncode(void *args) {
 
@@ -228,7 +231,7 @@ void *startVideoEncode(void *args) {
 
     int got_packet_ptr = 0;
     int frameCount = 0;
-    int64_t start_time =av_gettime();
+    int64_t start_time = av_gettime();
     while (!isEnd) {
         // 错误信息：Provided packet is too small, needs to be 1647 解决办法：重新初始化packet
         enc_pkt.data = NULL;
@@ -259,9 +262,16 @@ void *startVideoEncode(void *args) {
 //        memcpy(V_data_Dst, ele+out_y_size, out_y_size/4);
 //        memcpy(U_data_Dst , ele+out_y_size+out_y_size/4, out_y_size/4);
 
-        pFrame->data[0] =ele;
-        pFrame->data[1] = ele+out_y_size*5/4 ;
-        pFrame->data[2] =ele+out_y_size;
+        pFrame->data[0] = ele;
+        pFrame->data[1] = ele + out_y_size * 5 / 4;
+        pFrame->data[2] = ele + out_y_size;
+
+
+//        if(frameCount<10){
+//            fwrite(pFrame->data[0],1,out_y_size,out);
+//            fwrite(pFrame->data[1],1,out_y_size/4,out);
+//            fwrite(pFrame->data[2],1,out_y_size/4,out);
+//        }
 
         pFrame->width = arguments->out_width;
         pFrame->height = arguments->out_height;
@@ -270,7 +280,14 @@ void *startVideoEncode(void *args) {
         AVCodecContext *codec = ofmt_ctx->streams[0]->codec;
         //frameCount*12800/25
         //pFrame 第25帧时， pts = 12800
-          pFrame->pts = av_rescale_q(frameCount,ofmt_ctx->streams[0]->codec->time_base,ofmt_ctx->streams[0]->time_base) ;
+//          pFrame->pts = av_rescale_q(frameCount,ofmt_ctx->streams[0]->codec->time_base,ofmt_ctx->streams[0]->time_base) ;
+
+        int64_t now = av_gettime() - start_time;
+        const AVRational codecTimebase =
+                ofmt_ctx->streams[0]->codec->time_base;
+        const AVRational streamTimebase = ofmt_ctx->streams[0]->time_base;
+        int64_t rescaledNow = av_rescale_q(now, AV_TIME_BASE_Q, streamTimebase);
+        pFrame->pts = rescaledNow;
         int ret = avcodec_encode_video2(ofmt_ctx->streams[0]->codec, &enc_pkt, pFrame,
                                         &got_packet_ptr);
 
@@ -306,22 +323,25 @@ void *startVideoEncode(void *args) {
 //            enc_pkt.flags |= AV_PKT_FLAG_KEY;
         //FIX：No PTS (Example: Raw H.264)
 //Simple Write PTS
-        if(enc_pkt.pts==AV_NOPTS_VALUE){
+        if (enc_pkt.pts == AV_NOPTS_VALUE) {
             //Write PTS
-            AVRational time_base1=ofmt_ctx->streams[0]->time_base;
+            AVRational time_base1 = ofmt_ctx->streams[0]->time_base;
             //Duration between 2 frames (us)
-            int64_t calc_duration=(double)AV_TIME_BASE/av_q2d(ofmt_ctx->streams[0]->r_frame_rate);
+            int64_t calc_duration =
+                    (double) AV_TIME_BASE / av_q2d(ofmt_ctx->streams[0]->r_frame_rate);
             //Parameters
-            enc_pkt.pts=(double)(frameCount*calc_duration)/(double)(av_q2d(time_base1)*AV_TIME_BASE);
-            enc_pkt.dts=enc_pkt.pts;
-            enc_pkt.duration=(double)calc_duration/(double)(av_q2d(time_base1)*AV_TIME_BASE);
+            enc_pkt.pts = (double) (frameCount * calc_duration) /
+                          (double) (av_q2d(time_base1) * AV_TIME_BASE);
+            enc_pkt.dts = enc_pkt.pts;
+            enc_pkt.duration =
+                    (double) calc_duration / (double) (av_q2d(time_base1) * AV_TIME_BASE);
         }
         ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
         av_free_packet(&enc_pkt);
 
-        if(enc_pkt.stream_index==0){
-            AVRational time_base=ofmt_ctx->streams[0]->time_base;
-            AVRational time_base_q={1,AV_TIME_BASE};
+        if (enc_pkt.stream_index == 0) {
+            AVRational time_base = ofmt_ctx->streams[0]->time_base;
+            AVRational time_base_q = {1, AV_TIME_BASE};
             int64_t pts_time = av_rescale_q(enc_pkt.dts, time_base, time_base_q);
             int64_t now_time = av_gettime() - start_time;
             if (pts_time > now_time)
@@ -335,7 +355,7 @@ void *startVideoEncode(void *args) {
     }
 
     //Flush Encoder
-    int ret = flush_encoder(ofmt_ctx,0);
+    int ret = flush_encoder(ofmt_ctx, 0);
     if (ret < 0) {
         av_log(NULL, AV_LOG_FATAL, "Flushing encoder failed\n");
         return (void *) -1;
@@ -389,8 +409,8 @@ void *startAudioEncode(void *args) {
         //codecontext timebase 44100
         pFrame->pts = (frameCount++);
 //        pFrame->pts = (frameCount++)*codecContext->frame_size;
-        pFrame->nb_samples= codecContext->frame_size;
-        pFrame->format= codecContext->sample_fmt;
+        pFrame->nb_samples = codecContext->frame_size;
+        pFrame->format = codecContext->sample_fmt;
 //        if(frameCount>30){
 //            fwrite(ele, 1, 2048, fpOut);
 //        }else{
@@ -432,7 +452,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
 //    int in_width = 720;
 //    int in_height = 1280;
     int in_width = 800;//后置摄像头宽高要相反
-    int in_height =480 ;
+    int in_height = 480;
     int out_height = in_height;
     int out_width = in_width;
     arguments->video_bit_rate = video_bit_rate;
@@ -478,7 +498,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     avformat_network_init();
     char *rtmp_url = "rtmp://192.168.67.32:1935/live/marshall";
     out_filename = "rtmp://192.168.67.32:1935/live/marshall";
-    avformat_alloc_output_context2(&ofmt_ctx, NULL,"flv", out_filename);
+    avformat_alloc_output_context2(&ofmt_ctx, NULL, "flv", out_filename);
     if (!ofmt_ctx) {
         av_log(NULL, AV_LOG_FATAL, "Could not create output context\n");
         ret = AVERROR_UNKNOWN;
@@ -501,7 +521,7 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     if (!(ofmt_ctx->flags & AVFMT_NOFILE)) {
         ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
         if (ret < 0) {
-            av_log( NULL,AV_LOG_FATAL,"Could not open output URL '%s'", out_filename);
+            av_log(NULL, AV_LOG_FATAL, "Could not open output URL '%s'", out_filename);
             return;
         }
     }
@@ -573,9 +593,13 @@ int startSendOneVideoFrame(uint8_t *buf) {
 
     uint8_t *new_buf = (uint8_t *) malloc(in_y_size * 3 / 2);
     memcpy(new_buf, buf, in_y_size * 3 / 2);
+//    fwrite(new_buf, 1, in_y_size, out);
+//    fwrite(new_buf+in_y_size*5/4, 1, in_y_size / 4, out);
+//    fwrite(new_buf+in_y_size, 1, in_y_size / 4, out);
     video_frame_queue.push(new_buf);
     return 0;
 }
+
 /**
  * 发送一帧到编码队列
  * @param buf
@@ -593,7 +617,7 @@ JNIEXPORT void JNICALL
 Java_com_example_administrator_mrecord_AudioNativeUtils_pushData(JNIEnv *env, jclass type,
                                                                  jbyteArray buffer_, jint length) {
     jbyte *buffer = env->GetByteArrayElements(buffer_, NULL);
-    startSendOneAudioFrame((uint8_t*)buffer);
+    startSendOneAudioFrame((uint8_t *) buffer);
     env->ReleaseByteArrayElements(buffer_, buffer, 0);
 }extern "C"
 JNIEXPORT void JNICALL
