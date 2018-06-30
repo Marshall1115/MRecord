@@ -44,9 +44,9 @@ public class LiveEngine {
 //        videoParams.height = 720;
 //        videoParams.path = videoPath;
 //        videoParams.width = 1280;
-        videoParams.height = 480;
+        videoParams.height = 320;
         videoParams.path = videoPath;
-        videoParams.width = 800;
+        videoParams.width =480 ;
 //        videoParams.height = view.getHeight();
 //        videoParams.width = view.getWidth();
         videoParams.cameraId = Camera.CameraInfo.CAMERA_FACING_BACK;//前置摄像头

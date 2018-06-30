@@ -288,10 +288,10 @@ void *startVideoEncode(void *args) {
         const AVRational streamTimebase = ofmt_ctx->streams[0]->time_base;
         int64_t rescaledNow = av_rescale_q(now, AV_TIME_BASE_Q, streamTimebase);
         pFrame->pts = rescaledNow;
+        pFrame->pts = frameCount;
         int ret = avcodec_encode_video2(ofmt_ctx->streams[0]->codec, &enc_pkt, pFrame,
                                         &got_packet_ptr);
 
-        av_log(NULL, AV_LOG_FATAL, " pFrame->key_frame %d ! \n", pFrame->pict_type);
 
 //        enc_pkt.duration=(ofmt_ctx->streams[0]->time_base.den) /
 //                         ((ofmt_ctx->streams[0]->time_base.num) * arguments->frame_rate);
@@ -308,7 +308,7 @@ void *startVideoEncode(void *args) {
 //                                           ofmt_ctx->streams[0]->time_base, (AVRounding)(AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX));
 //
 //            enc_pkt.duration = ((ofmt_ctx->streams[0]->time_base.den / ofmt_ctx->streams[0]->time_base.num) / 15);
-            av_log(NULL, AV_LOG_FATAL, "Avpacket pts %lld \n", enc_pkt.pts);
+//            av_log(NULL, AV_LOG_FATAL, "Avpacket pts %lld \n", enc_pkt.pts);
             enc_pkt.stream_index = ofmt_ctx->streams[0]->index;
             av_log(NULL, AV_LOG_FATAL, " video encode succetss  ! \n");
 //            enc_pkt.pts=enc_pkt.dts=frameCount;
@@ -323,19 +323,28 @@ void *startVideoEncode(void *args) {
 //            enc_pkt.flags |= AV_PKT_FLAG_KEY;
         //FIX：No PTS (Example: Raw H.264)
 //Simple Write PTS
-        if (enc_pkt.pts == AV_NOPTS_VALUE) {
-            //Write PTS
-            AVRational time_base1 = ofmt_ctx->streams[0]->time_base;
-            //Duration between 2 frames (us)
-            int64_t calc_duration =
-                    (double) AV_TIME_BASE / av_q2d(ofmt_ctx->streams[0]->r_frame_rate);
-            //Parameters
-            enc_pkt.pts = (double) (frameCount * calc_duration) /
-                          (double) (av_q2d(time_base1) * AV_TIME_BASE);
-            enc_pkt.dts = enc_pkt.pts;
-            enc_pkt.duration =
-                    (double) calc_duration / (double) (av_q2d(time_base1) * AV_TIME_BASE);
-        }
+//        if (enc_pkt.pts == AV_NOPTS_VALUE) {
+//            //Write PTS
+//            AVRational time_base1 = ofmt_ctx->streams[0]->time_base;
+//            //Duration between 2 frames (us)
+//            int64_t calc_duration =(double) AV_TIME_BASE / av_q2d(AVRational{1,arguments->frame_rate});
+//            //Parameters
+//            enc_pkt.pts = (double) (frameCount * calc_duration) /
+//                          (double) (av_q2d(time_base1) * AV_TIME_BASE);
+//
+//
+//        enc_pkt.dts = enc_pkt.pts;
+//            enc_pkt.duration =
+//                    (double) calc_duration / (double) (av_q2d(time_base1) * AV_TIME_BASE);
+//        }
+
+        enc_pkt.pts =
+                frameCount * (ofmt_ctx->streams[0]->time_base.den) / ((ofmt_ctx->streams[0]->time_base.num) *  arguments->frame_rate);
+        enc_pkt.dts = enc_pkt.pts;
+        enc_pkt.duration = (ofmt_ctx->streams[0]->time_base.den) / ((ofmt_ctx->streams[0]->time_base.num*  arguments->frame_rate));
+        enc_pkt.pos = -1;
+
+        av_log(NULL, AV_LOG_FATAL,"pts:%lld ", enc_pkt.pts);
         ret = av_interleaved_write_frame(ofmt_ctx, &enc_pkt);
         av_free_packet(&enc_pkt);
 
@@ -448,11 +457,11 @@ Java_com_example_administrator_mrecord_LiveEngine_prepareRecord(JNIEnv *env, job
     __android_log_print(ANDROID_LOG_DEBUG, "native-lib", "videoPath :%s", videoPath);
     arguments = (struct UserArguments *) malloc(sizeof(UserArguments));
     int video_bit_rate = 400000;
-    int frame_rate = 25;
+    int frame_rate = 10;
 //    int in_width = 720;
 //    int in_height = 1280;
-    int in_width = 800;//后置摄像头宽高要相反
-    int in_height = 480;
+    int in_width =480 ;//后置摄像头宽高要相反
+    int in_height = 320 ;
     int out_height = in_height;
     int out_width = in_width;
     arguments->video_bit_rate = video_bit_rate;
